@@ -1,0 +1,5 @@
+requests==2.19.1
+urllib3==1.23
+pyaes==1.6.1
+pyasn1==0.4.4
+pycryptodome==3.6.3
