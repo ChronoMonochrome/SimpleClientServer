@@ -18,31 +18,49 @@ Send a POST request::
 """
 import sys
 import os
-import requests
 import errno
 
 from sys import version as python_version
 from cgi import parse_header, parse_multipart
 
-try:
-	from cStringIO import StringIO
-except ImportError:
-	from StringIO import StringIO
-
 if python_version.startswith('3'):
 	from urllib.parse import parse_qs
-	from http.server import BaseHTTPRequestHandler, HTTPServer
+	from http.server import BaseHTTPRequestHandler, HTTPServer, SimpleHTTPRequestHandler
+	from io import BytesIO, StringIO
 else:
 	from urlparse import parse_qs
 	from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
-	
-from SimpleHTTPServer import SimpleHTTPRequestHandler
+	from SimpleHTTPServer import SimpleHTTPRequestHandler
+	try:
+		from cStringIO import StringIO
+	except ImportError:
+		from StringIO import StringIO
+
 
 # File ID
 FILE_GLOBAL_ID = 0
 
 # File signature
-FILE_SIGNATURE = "\x20\x18\x20\x18"
+if python_version.startswith('3'):
+	FILE_SIGNATURE = b"\x20\x18\x20\x18"
+else:
+	FILE_SIGNATURE = b"\x20\x18\x20\x18"
+	
+if python_version.startswith('3'):
+	def s2b(str_):
+		return bytes(str_, "u8")
+
+	def b2s(bytes_):
+		if type(bytes_) == bytes:
+			return bytes_.decode("u8")
+		else:
+			return bytes_
+else:
+	def s2b(str_):
+		return str_
+
+	def b2s(bytes_):
+		return bytes_
 
 # Post data ends with
 POST_BOUNDARY_LEN = 40
@@ -55,9 +73,15 @@ class MyServer(BaseHTTPRequestHandler):
 		
 	def parse_POST(self):
 		ctype, pdict = parse_header(self.headers['content-type'])
+		if python_version.startswith("3"):
+			pdict['boundary'] = bytes(pdict['boundary'], "u8")
 
 		if ctype == 'multipart/form-data':
-			postvars = parse_multipart(self.rfile_backup, pdict)
+			try:
+				postvars = parse_multipart(self.rfile_backup, pdict)
+			except:
+				print(dir(self.rfile_backup))
+				raise
 		elif ctype == 'application/x-www-form-urlencoded':
 			length = int(self.headers['content-length'])
 			postvars = parse_qs(
@@ -66,22 +90,14 @@ class MyServer(BaseHTTPRequestHandler):
 		else:
 			postvars = {}
 		return postvars
-		
-	def get_filename(self):
-		try:
-			h_start = self.post_data.index("Content-Disposition:") + len("Content-Disposition:")
-			f_start = self.post_data.index("filename=\"", h_start) + len("filename=\"")
-			f_end = self.post_data.index("\"", f_start)
-			filename = self.post_data[f_start: f_end]
-			print("filename: %s" % filename)
-			return filename
-		except:
-			return
 			
 	def read_POST(self):
 		content_length = int(self.headers['Content-Length']) # <--- Gets the size of data
 		self.post_data = self.rfile.read(content_length) # <--- Gets the data itself
-		self.rfile_backup = StringIO()
+		if python_version.startswith("3"):
+			self.rfile_backup = BytesIO()
+		else:
+			self.rfile_backup = StringIO()
 		self.rfile_backup.write(self.post_data)
 		self.rfile_backup.seek(0)
 		
@@ -103,32 +119,35 @@ class MyServer(BaseHTTPRequestHandler):
 				self.filename = file_data["name"]
 				self.send_head()
 				#print("after send head")
-				self.wfile.write(self.data)
+				self.wfile.write(s2b(self.data))
 			except:
 				catch()
 				self.send_response(400)
 		elif self.path == "/id":
 			self._set_headers()
-			self.wfile.write(str(get_file_id() - 1))
+			self.wfile.write(s2b(str(get_file_id() - 1)))
 		else:
 			self._set_headers()
-			self.wfile.write("<html><body><h1>hi!</h1></body></html>")
+			self.wfile.write(s2b("<html><body><h1>hi!</h1></body></html>"))
 
 	def do_HEAD(self):
 		self._set_headers()
-		
 	def get_filename(self):
+		#print(self.post_data)
 		try:
-			h_start = self.post_data.index("Content-Disposition:") + len("Content-Disposition:")
-			f_start = self.post_data.index("filename=\"", h_start) + len("filename=\"")
-			f_end = self.post_data.index("\"", f_start)
+			h_start = self.post_data.index(s2b("Content-Disposition:")) + len("Content-Disposition:")
+			#print(h_start)
+			f_start = self.post_data.index(s2b("filename=\""), h_start) + len("filename=\"")
+			#print(f_start)
+			f_end = self.post_data.index(s2b("\""), f_start)
+			#print(f_end)
 			filename = self.post_data[f_start: f_end]
 			print("filename: %s" % filename)
 			return filename
 		except:
 			print("file name not found!")
 			self.send_response(400)
-			return
+			raise
 		
 	def do_POST(self):
 		global FILE_GLOBAL_ID
@@ -154,7 +173,7 @@ class MyServer(BaseHTTPRequestHandler):
 			self.send_response(400)
 			return
 		self._set_headers()
-		self.wfile.write("<html><body><h1>POST!</h1></body></html>")
+		self.wfile.write(s2b("<html><body><h1>POST!</h1></body></html>"))
 		
 def mkdir_p(path):
 	try:
@@ -221,7 +240,7 @@ def save_file(path, filename, filedata):
 			res["id"] = id
 			res["name"] = filename
 			res["data"] = filedata
-			f.write(str(res))
+			f.write(s2b(str(res)))
 			set_file_id(id + 1)
 	except:
 		catch()
