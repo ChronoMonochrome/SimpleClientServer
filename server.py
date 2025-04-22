@@ -248,7 +248,7 @@ def save_file(path, filename, filedata):
 	return 0
 
 def run(server_class = HTTPServer, handler_class = MyServer, port = 8083):	
-	server_address = ('', port)
+	server_address = ('0.0.0.0', port)
 	httpd = server_class(server_address, handler_class)
 	print('Starting httpd...')
 	try:
